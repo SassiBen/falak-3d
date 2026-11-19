@@ -1,0 +1,8 @@
+name: ecommerce
+title: Maquette produit
+description: Volume de présentation d'un produit pour une fiche e-commerce ou un configurateur.
+template: "a {subject}, single product, clean simple shape, studio object"
+guidance_scale: 15
+steps: 64
+target_faces: 20000
+size_m: 0.35

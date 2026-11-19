@@ -1,0 +1,8 @@
+name: jeu
+title: Objet de jeu low-poly
+description: Accessoire de décor pour un prototype de jeu ou une scène temps réel.
+template: "low poly {subject}, game asset, stylized"
+guidance_scale: 15
+steps: 48
+target_faces: 2500
+size_m: 1.0

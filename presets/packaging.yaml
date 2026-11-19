@@ -1,0 +1,8 @@
+name: packaging
+title: Prototype d'emballage
+description: Première forme d'un emballage ou d'un présentoir, à valider avant le bureau d'études.
+template: "{subject} packaging, product box, sharp edges"
+guidance_scale: 17
+steps: 64
+target_faces: 8000
+size_m: 0.25

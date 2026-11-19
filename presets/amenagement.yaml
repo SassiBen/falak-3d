@@ -1,0 +1,8 @@
+name: amenagement
+title: Mobilier et aménagement
+description: Volume de mobilier à l'échelle pour une esquisse d'aménagement d'espace.
+template: "a {subject}, furniture, realistic proportions"
+guidance_scale: 15
+steps: 64
+target_faces: 15000
+size_m: 1.2
