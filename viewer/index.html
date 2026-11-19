@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Falak 3D — visionneuse</title>
+  <style>
+    :root { --ground: #140a0c; --ink: #f4edea; --soft: #a99a9d; --wine: #8e1b2e; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--ground); color: var(--ink);
+      font: 14px/1.5 system-ui, sans-serif; }
+    canvas { display: block; }
+    .bar { position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-radius: 999px;
+      background: rgb(30 16 19 / .6); backdrop-filter: blur(18px);
+      border: 1px solid rgb(255 255 255 / .08); }
+    .bar label, .bar button { cursor: pointer; padding: 6px 12px; border-radius: 999px;
+      border: 0; background: var(--wine); color: var(--ink); font: inherit; }
+    .bar input { display: none; }
+    .info { position: fixed; bottom: 16px; left: 16px; color: var(--soft); font-size: 12px; }
+    .drop { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none;
+      color: var(--soft); }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <label>Ouvrir un .glb<input id="file" type="file" accept=".glb,.gltf"></label>
+    <button id="spin">Rotation</button>
+  </div>
+  <div class="drop" id="drop">Déposer un fichier .glb, ou ajouter ?src=URL à l'adresse</div>
+  <div class="info" id="info"></div>
+
+  <script type="importmap">
+    { "imports": {
+        "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/" } }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x140a0c);
+    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.01, 100);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x2a0a10, 1.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+    sun.position.set(2, 4, 3);
+    scene.add(sun);
+    const grid = new THREE.GridHelper(4, 40, 0x8e1b2e, 0x2a1418);
+    scene.add(grid);
+
+    let current = null;
+    const loader = new GLTFLoader();
+    const info = document.getElementById("info");
+
+    function show(url, label) {
+      loader.load(url, (gltf) => {
+        if (current) scene.remove(current);
+        current = gltf.scene;
+        current.traverse((o) => {
+          // Les maillages Shap-E portent des couleurs par sommet, pas de texture.
+          if (o.isMesh && o.geometry.attributes.color) {
+            o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
+          }
+        });
+        scene.add(current);
+        const box = new THREE.Box3().setFromObject(current);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const radius = Math.max(size.x, size.y, size.z);
+        camera.position.set(center.x + radius * 1.4, center.y + radius * 0.9, center.z + radius * 1.6);
+        controls.target.copy(center);
+        grid.scale.setScalar(Math.max(radius, 0.25));
+        document.getElementById("drop").hidden = true;
+        info.textContent = `${label} — ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m`;
+      }, undefined, () => { info.textContent = "Impossible de lire ce fichier."; });
+    }
+
+    const src = new URLSearchParams(location.search).get("src");
+    if (src) show(src, src.split("/").pop());
+
+    document.getElementById("file").addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if (f) show(URL.createObjectURL(f), f.name);
+    });
+    addEventListener("dragover", (e) => e.preventDefault());
+    addEventListener("drop", (e) => {
+      e.preventDefault();
+      const f = e.dataTransfer.files[0];
+      if (f) show(URL.createObjectURL(f), f.name);
+    });
+    document.getElementById("spin").addEventListener("click", () => {
+      controls.autoRotate = !controls.autoRotate;
+    });
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+  </script>
+</body>
+</html>
