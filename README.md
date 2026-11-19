@@ -1,49 +1,68 @@
 # Falak 3D
 
-Génération d'objets 3D à partir d'une phrase, sur une carte graphique grand
-public et sans service cloud. Le modèle est [Shap-E](https://github.com/openai/shap-e)
-(OpenAI, open-source) ; ce dépôt en fait un service utilisable par une
-entreprise : presets par métier, traduction des descriptions, maillages
-nettoyés et mis à l'échelle, file de jobs, visionneuse web.
+**Écrivez « une lampe de bureau », récupérez un objet 3D prêt à l'emploi. Sur une carte graphique ordinaire, sans service cloud.**
+
+Les modèles qui génèrent de la 3D à partir de texte existent, mais ce qu'ils
+produisent brut est rarement utilisable : une forme couchée sur le côté, à une
+échelle arbitraire, avec des fragments qui flottent autour. Ce projet prend
+[Shap-E](https://github.com/openai/shap-e), un modèle open source d'OpenAI, et
+en fait un vrai service : on choisit un usage, on décrit l'objet en français,
+et on récupère un fichier `.glb` propre, à la bonne taille, qui s'ouvre dans un
+navigateur, Blender ou Unity.
 
 C'est le service derrière la galerie de [falakion.com/falak3d](https://falakion.com/fr/falak3d).
 
 ![Architecture](docs/architecture.svg)
 
-Le document complet est dans [docs/falak-3d.pdf](docs/falak-3d.pdf).
+## Pour quoi faire ?
 
-## Ce que le projet montre
+Le même modèle sert des besoins différents grâce à des **presets** :
 
-- **Faire tourner un modèle génératif sur du matériel modeste.** La cible est
-  une GTX 1060 de 6 Go (architecture Pascal) partagée avec le LLM de
-  l'assistant. Le choix des versions de PyTorch, le cache des poids et le
-  partage de la VRAM sont traités explicitement.
-- **Adapter le modèle aux usages plutôt que l'inverse.** Un preset décrit un
-  métier : gabarit de description, réglages de diffusion, budget de faces et
-  taille réelle de l'objet. Le même modèle produit une maquette produit de
-  35 cm, un accessoire de jeu low-poly ou un meuble à l'échelle.
-- **Livrer un fichier utilisable, pas une sortie brute.** Le maillage est
-  débarrassé de ses îlots, décimé en gardant ses couleurs, réorienté (Shap-E
-  travaille en Z vers le haut, glTF en Y), mis à l'échelle et posé au sol.
-- **Être exploitable.** File à un seul worker avec positions et annulation,
-  état persistant, purge automatique, `/health` qui sait dire que le worker est
-  mort, métriques Prometheus.
-
-## Presets
-
-| Preset | Usage | Faces | Taille |
+| Preset | Pour qui | Taille de l'objet | Niveau de détail |
 |---|---|---|---|
-| `ecommerce` | maquette de produit pour une fiche ou un configurateur | 20 000 | 35 cm |
-| `packaging` | premier volume d'un emballage ou d'un présentoir | 8 000 | 25 cm |
-| `jeu` | accessoire de décor low-poly pour un moteur temps réel | 2 500 | 1 m |
-| `amenagement` | mobilier à l'échelle pour une esquisse d'espace | 15 000 | 1,2 m |
+| `ecommerce` | une fiche produit, un configurateur | 35 cm | élevé |
+| `packaging` | une première idée d'emballage | 25 cm | moyen |
+| `jeu` | un décor de jeu vidéo | 1 m | faible (low-poly) |
+| `amenagement` | une esquisse de mobilier dans une pièce | 1,2 m | élevé |
 
-Un preset est un fichier YAML dans `presets/` : en ajouter un ne demande pas
-de toucher au code.
+Un preset est un petit fichier YAML : en ajouter un ne demande pas de toucher
+au code. C'est une esquisse, pas un modèle final : l'intérêt est d'aller vite
+pour visualiser une idée.
 
-## Démarrage
+## Ce qui se passe entre la phrase et le fichier
 
-Avec Docker et un GPU NVIDIA :
+1. **Traduction.** Shap-E ne comprend que l'anglais. La description est
+   traduite par le LLM local s'il est disponible, sinon par un petit lexique.
+2. **Génération.** Shap-E produit une forme en 40 à 60 secondes sur une GTX 1060.
+3. **Nettoyage.** On supprime les fragments parasites, on réduit le nombre de
+   faces en gardant les couleurs, on redresse l'objet (Shap-E le couche sur le
+   côté par rapport au format glTF), on le met à la taille du preset et on le
+   pose au sol.
+4. **Livraison.** Le fichier est disponible par l'API et s'ouvre dans la
+   visionneuse fournie (`viewer/index.html`).
+
+## Ce que j'ai appris en production
+
+**Une carte graphique ancienne, c'est des versions à verrouiller.** La GTX 1060
+n'est plus prise en charge par les versions récentes de PyTorch. Une dépendance
+de Shap-E faisait monter PyTorch en silence : l'installation réussissait, et
+tout plantait au premier objet. Les versions sont maintenant verrouillées, et
+la construction de l'image échoue tout de suite si la carte n'est pas couverte.
+
+**Un service qui meurt sans le dire est le pire des cas.** Sur un disque plein,
+le processus qui traite la file d'attente s'arrêtait, alors que le service
+répondait toujours « tout va bien ». Désormais, une erreur ne peut plus arrêter
+la file, et le contrôle de santé vérifie vraiment qu'elle tourne.
+
+**Un GPU de 6 Go pour deux modèles.** L'assistant Falak Chat et Shap-E
+partagent la même carte. Avant chaque objet, le service 3D demande au LLM de
+libérer la mémoire, puis le recharge quand il a fini.
+
+Le dossier complet est dans [docs/falak-3d.pdf](docs/falak-3d.pdf).
+
+## L'essayer
+
+Avec Docker et une carte NVIDIA :
 
 ```bash
 cp .env.example .env
@@ -53,37 +72,31 @@ curl -X POST localhost:8001/v1/jobs -H "X-API-Key: $FALAK3D_API_KEY" \
   -d '{"prompt": "une lampe de bureau", "preset": "ecommerce"}'
 ```
 
-Le premier job télécharge les poids (2,7 Go, gardés dans le volume) et les
-charge en mémoire, environ 30 secondes. Une génération prend ensuite 40 à
-60 secondes sur la GTX 1060.
+Le premier objet est plus long : il faut télécharger les poids du modèle
+(2,7 Go, gardés ensuite) et les charger.
 
-Sans GPU, pour essayer l'API et la chaîne de traitement :
+Sans GPU, pour voir toute la chaîne avec une forme simple à la place de Shap-E :
 
 ```bash
 pip install -e .
 falak3d generate "une tasse" --fake -o out/tasse.glb
 ```
 
-Les fichiers `.glb` s'ouvrent dans `viewer/index.html` (glisser-déposer, ou
-`?src=` suivi de l'URL du fichier).
+Ouvrez ensuite `viewer/index.html` et glissez-y le fichier.
 
-## Traduction
+## Sous le capot
 
-Shap-E a été entraîné sur des légendes en anglais. Si `OLLAMA_URL` est défini,
-la description est traduite par le LLM local ; sinon un petit lexique couvre
-les objets courants. Avec Ollama configuré, le service décharge aussi le LLM
-pendant une génération et le recharge quand la file se vide.
+- **Shap-E** et **PyTorch 2.5** pour la génération (environ 3 Go de mémoire graphique).
+- **trimesh** pour nettoyer, réduire et redresser les maillages.
+- **FastAPI** pour l'API : file d'attente avec position, annulation, rétention
+  de 7 jours, métriques Prometheus.
+- **three.js** pour la visionneuse.
 
-## API
-
-| Méthode | Route | Rôle |
-|---|---|---|
-| `GET` | `/v1/presets` | liste des presets |
-| `POST` | `/v1/jobs` | crée un job (`prompt`, `preset`) |
-| `GET` | `/v1/jobs/{id}` | état, position dans la file, rapport de maillage |
-| `POST` | `/v1/jobs/{id}/cancel` | annule un job en attente |
-| `GET` | `/v1/files/{id}.glb` | fichier produit |
-| `GET` | `/health`, `/metrics` | supervision |
+```
+src/falak3d/   le code (presets, traduction, nettoyage, file, API)
+presets/       un fichier par usage
+viewer/        la visionneuse web
+```
 
 ## Tests
 
@@ -92,9 +105,11 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Les tests utilisent un générateur de primitives à la place de Shap-E : ils
-couvrent le traitement des maillages, la file et l'API sans GPU.
+Les 17 tests remplacent Shap-E par des formes simples : ils vérifient le
+nettoyage, l'orientation, l'échelle, la file d'attente et l'API sans carte
+graphique.
 
-## Licence
+---
 
-MIT. Shap-E est distribué sous licence MIT par OpenAI.
+Projet sous licence MIT, par Sassi Benalouache ([Falakion](https://falakion.com)).
+Shap-E est distribué sous licence MIT par OpenAI.
