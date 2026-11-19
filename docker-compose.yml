@@ -1,0 +1,21 @@
+services:
+  falak3d:
+    build: .
+    environment:
+      - FALAK3D_API_KEY=${FALAK3D_API_KEY:?définir FALAK3D_API_KEY dans .env}
+      - OLLAMA_URL=${OLLAMA_URL:-}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b-instruct-q4_K_S}
+    volumes:
+      - data:/data
+    ports:
+      - "127.0.0.1:8001:8001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  data:

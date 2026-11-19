@@ -1,0 +1,7 @@
+# Shap-E tire CLIP, qui exige torchvision sans borne ; chaque torchvision
+# épingle son torch au point près. Sans ce verrou, pip remonte torch vers une
+# version dont les roues ne contiennent plus de noyaux pour Pascal (GTX 10xx),
+# et l'échantillonnage échoue au premier job : "no kernel image is available".
+torch==2.5.1
+torchvision==0.20.1
+numpy<2
